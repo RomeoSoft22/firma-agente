@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>AgenteFirma</RootNamespace>
+    <AssemblyName>AgenteFirma</AssemblyName>
+    <Version>1.0.0</Version>
+    <!-- Publicación como un único .exe autocontenido: dotnet publish -c Release -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- iText 7.2 (AGPL): firma PAdES, sello de tiempo, OCSP/CRL y verificación -->
+    <PackageReference Include="itext7" Version="7.2.5" />
+  </ItemGroup>
+
+</Project>

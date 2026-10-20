@@ -1,0 +1,19 @@
+# Compilación
+bin/
+obj/
+publish/
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+
+# Logs y temporales
+*.log
+Thumbs.db
+
+# Configuración local (no versionar una copia con orígenes o rutas propias de un equipo)
+appsettings.Development.json
+appsettings.Local.json
