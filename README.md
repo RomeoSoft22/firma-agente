@@ -25,26 +25,40 @@ Forma parte del sistema de firma digital:
 - Windows 10/11 y el middleware/minidriver del token o DNIe.
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) para compilar (`winget install Microsoft.DotNet.SDK.8`).
 
-## Ejecución
+## Ejecución (desarrollo)
 
 ```powershell
 dotnet run
 ```
 
-Distribución a los usuarios como un único ejecutable autocontenido:
+Es una aplicación de Windows sin consola: aparece como ícono en la bandeja del sistema (menú:
+abrir el sitio de firma, ver registro, salir). Solo se permite una instancia por usuario. El registro
+se guarda en `%LOCALAPPDATA%\AgenteFirma\logs` (14 días).
+
+## Instalador para las PCs de los usuarios
 
 ```powershell
-dotnet publish -c Release   # bin\Release\net8.0-windows\win-x64\publish\AgenteFirma.exe
+winget install JRSoftware.InnoSetup          # una sola vez
+powershell -ExecutionPolicy Bypass -File instalador\construir.ps1
 ```
 
+Genera `instalador\salida\AgenteFirmaSetup.exe` (~77 MB, incluye .NET: no hay que instalar nada más):
+
+- Instala por usuario en `%LOCALAPPDATA%\Programs\AgenteFirma`, **sin pedir administrador**.
+- Crea acceso en el menú Inicio y **arranca al iniciar sesión** (carpeta Inicio del usuario).
+- Al actualizar, detiene la versión en ejecución; se desinstala desde «Aplicaciones instaladas».
+- Instalación desatendida: `AgenteFirmaSetup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART`.
+
 Debe ejecutarse **en la sesión del usuario** (no como servicio de Windows) para ver su almacén
-personal y mostrar el diálogo de PIN.
+personal y mostrar el diálogo de PIN. El instalador no está firmado con un certificado de firma de
+código, por lo que SmartScreen puede advertir «editor desconocido».
 
 ## Configuración (`appsettings.json`)
 
 | Clave | Descripción |
 | --- | --- |
 | `Agente:Puerto` | Puerto local (por defecto 9876) |
+| `Agente:SitioWeb` | Sitio que abre el ícono de la bandeja (`https://firma.juarezcampos.net`) |
 | `Agente:OrigenesPermitidos` | Sitios web autorizados a usar el agente (el front) |
 | `Agente:TamanoMaximoMb` | Tamaño máximo de PDF |
 | `Agente:TsaUrlPorDefecto` | Servidor de sello de tiempo si la petición no indica uno |

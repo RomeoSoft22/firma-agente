@@ -8,6 +8,7 @@ using iText.Kernel.Pdf;
 using iText.Signatures;
 using Org.BouncyCastle.Security;
 using BcX509 = Org.BouncyCastle.X509.X509Certificate;
+using Rectangle = iText.Kernel.Geom.Rectangle;
 
 namespace AgenteFirma.Servicios;
 

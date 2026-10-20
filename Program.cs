@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Security.Cryptography;
+using AgenteFirma;
 using AgenteFirma.Modelos;
 using AgenteFirma.Servicios;
 using Microsoft.AspNetCore.Http.Features;
@@ -7,13 +8,20 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 // Agente local de firma: expone en 127.0.0.1 (solo la propia PC) las operaciones que el
 // navegador no puede hacer por sí mismo: leer el almacén de certificados / token y firmar.
+
+// Una sola instancia por sesión de Windows (el instalador lo inicia al iniciar sesión).
+using var instancia = new Mutex(true, @"Local\AgenteFirmaDigital", out var esPrimera);
+if (!esPrimera) return;
+
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
     Args = args,
     ContentRootPath = AppContext.BaseDirectory
 });
+builder.Logging.AddProvider(new RegistroArchivoProvider());
 
 var puerto = builder.Configuration.GetValue("Agente:Puerto", 9876);
+var sitioWeb = builder.Configuration["Agente:SitioWeb"];
 var origenes = builder.Configuration.GetSection("Agente:OrigenesPermitidos").Get<string[]>() ?? Array.Empty<string>();
 var maxBytes = builder.Configuration.GetValue("Agente:TamanoMaximoMb", 200) * 1024L * 1024L;
 
@@ -133,6 +141,30 @@ app.MapPost("/api/verificar", (VerificarRequest req, PdfVerificacionService svc)
     return Results.Ok(svc.Verificar(Convert.FromBase64String(req.PdfBase64)));
 });
 
-app.Logger.LogInformation("Agente de firma escuchando en http://127.0.0.1:{Puerto} — orígenes permitidos: {Origenes}",
-    puerto, string.Join(", ", origenes));
-app.Run();
+try
+{
+    await app.StartAsync();
+}
+catch (IOException ex)
+{
+    app.Logger.LogError(ex, "No se pudo abrir el puerto {Puerto}", puerto);
+    MessageBox.Show(
+        $"El Agente de Firma no pudo iniciarse: el puerto {puerto} está siendo usado por otro programa.",
+        "Agente de Firma Digital", MessageBoxButtons.OK, MessageBoxIcon.Error);
+    return;
+}
+
+app.Logger.LogInformation("Agente de firma v{Version} escuchando en http://127.0.0.1:{Puerto} — orígenes permitidos: {Origenes}",
+    version, puerto, string.Join(", ", origenes));
+
+// Ícono en la bandeja del sistema (Windows Forms requiere un hilo STA propio).
+var hiloBandeja = new Thread(() =>
+{
+    Application.EnableVisualStyles();
+    Application.Run(new Bandeja(puerto, sitioWeb, () => app.Lifetime.StopApplication()));
+});
+hiloBandeja.SetApartmentState(ApartmentState.STA);
+hiloBandeja.IsBackground = true;
+hiloBandeja.Start();
+
+await app.WaitForShutdownAsync();

@@ -7,6 +7,7 @@ using iText.Kernel.Geom;
 using iText.Kernel.Pdf;
 using iText.Kernel.Pdf.Canvas;
 using iText.Kernel.Pdf.Xobject;
+using Rectangle = iText.Kernel.Geom.Rectangle;
 
 namespace AgenteFirma.Servicios;
 

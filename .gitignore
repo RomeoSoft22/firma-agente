@@ -2,6 +2,7 @@
 bin/
 obj/
 publish/
+instalador/salida/
 
 # Visual Studio / Rider / VS Code
 .vs/
