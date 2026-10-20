@@ -4,7 +4,7 @@
 ; desde "Aplicaciones instaladas" de Windows.
 
 #define Nombre "Agente de Firma Digital"
-#define Version "1.1.0"
+#define Version "1.2.0"
 #define Ejecutable "AgenteFirma.exe"
 #ifndef Publicacion
   #define Publicacion "..\publish"
@@ -46,21 +46,25 @@ Source: "{#Publicacion}\appsettings.json"; DestDir: "{app}"; Flags: ignoreversio
 [Icons]
 ; Menú Inicio y arranque automático al iniciar sesión en Windows.
 Name: "{userprograms}\{#Nombre}"; Filename: "{app}\{#Ejecutable}"
+Name: "{userprograms}\Reiniciar Agente de Firma"; Filename: "{app}\{#Ejecutable}"; Parameters: "--reiniciar"; Comment: "Cierra el agente si quedó colgado y lo vuelve a iniciar"
 Name: "{userstartup}\{#Nombre}"; Filename: "{app}\{#Ejecutable}"
 
 [Run]
-Filename: "{app}\{#Ejecutable}"; Description: "Iniciar el Agente de Firma ahora"; Flags: nowait postinstall skipifsilent
+; Siempre arranca limpio: --reiniciar termina cualquier instancia anterior que haya quedado.
+Filename: "{app}\{#Ejecutable}"; Parameters: "--reiniciar"; Description: "Iniciar el Agente de Firma ahora"; Flags: nowait postinstall
 
 [UninstallDelete]
 ; Registros de actividad (%LOCALAPPDATA%\AgenteFirma\logs).
 Type: filesandordirs; Name: "{localappdata}\AgenteFirma"
 
 [Code]
+{ Termina toda instancia previa del agente (instalada, de desarrollo o colgada) y espera a que libere el puerto. }
 procedure CerrarAgente();
 var
   Codigo: Integer;
 begin
-  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM {#Ejecutable}', '', SW_HIDE, ewWaitUntilTerminated, Codigo);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM {#Ejecutable}', '', SW_HIDE, ewWaitUntilTerminated, Codigo);
+  Sleep(1500);
 end;
 
 { Al actualizar: detener la versión en ejecución para poder reemplazar el .exe. }

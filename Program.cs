@@ -9,13 +9,11 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 // Agente local de firma: expone en 127.0.0.1 (solo la propia PC) las operaciones que el
 // navegador no puede hacer por sí mismo: leer el almacén de certificados / token y firmar.
 
-// Una sola instancia por sesión de Windows (el instalador lo inicia al iniciar sesión).
-using var instancia = new Mutex(true, @"Local\AgenteFirmaDigital", out var esPrimera);
-if (!esPrimera) return;
-
+var reiniciar = args.Contains(Instancia.ArgumentoReiniciar, StringComparer.OrdinalIgnoreCase);
 var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 {
-    Args = args,
+    // "--reiniciar" no es configuración: se quita antes de pasar los argumentos.
+    Args = args.Where(a => !a.Equals(Instancia.ArgumentoReiniciar, StringComparison.OrdinalIgnoreCase)).ToArray(),
     ContentRootPath = AppContext.BaseDirectory
 });
 builder.Logging.AddProvider(new RegistroArchivoProvider());
@@ -23,6 +21,11 @@ builder.Logging.AddProvider(new RegistroArchivoProvider());
 var puerto = builder.Configuration.GetValue("Agente:Puerto", 9876);
 var sitioWeb = builder.Configuration["Agente:SitioWeb"];
 var origenes = builder.Configuration.GetSection("Agente:OrigenesPermitidos").Get<string[]>() ?? Array.Empty<string>();
+
+// Una sola instancia por sesión de Windows. Si la anterior está colgada (no responde) o se pidió
+// reiniciar, se termina y esta toma su lugar; si la anterior funciona, esta se cierra.
+using var instancia = Instancia.Tomar(reiniciar, puerto, origenes.FirstOrDefault());
+if (instancia == null) return;
 var maxBytes = builder.Configuration.GetValue("Agente:TamanoMaximoMb", 200) * 1024L * 1024L;
 
 builder.WebHost.UseUrls($"http://127.0.0.1:{puerto}");

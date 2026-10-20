@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>AgenteFirma</RootNamespace>
     <AssemblyName>AgenteFirma</AssemblyName>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Product>Agente de Firma Digital</Product>
     <Company>JuarezGonzales</Company>
     <Description>Agente local para firmar documentos PDF con el certificado del usuario</Description>

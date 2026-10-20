@@ -20,6 +20,7 @@ public sealed class Bandeja : ApplicationContext
             menu.Items.Add("Abrir el sitio de firma", null, (_, _) => Abrir(sitioWeb!));
         menu.Items.Add("Ver registro", null, (_, _) => Abrir(RegistroArchivoProvider.Carpeta));
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Reiniciar agente", null, (_, _) => ReiniciarAgente());
         menu.Items.Add("Salir", null, (_, _) => Salir());
 
         _icono = new NotifyIcon
@@ -35,6 +36,13 @@ public sealed class Bandeja : ApplicationContext
 
     public void Notificar(string titulo, string texto) =>
         _icono.ShowBalloonTip(4000, titulo, texto, ToolTipIcon.Info);
+
+    /// <summary>La nueva instancia (con --reiniciar) termina a esta y vuelve a abrir el puerto.</summary>
+    private void ReiniciarAgente()
+    {
+        _icono.Visible = false;
+        Instancia.Reiniciar();
+    }
 
     private void Salir()
     {
