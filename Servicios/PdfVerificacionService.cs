@@ -67,6 +67,13 @@ public class PdfVerificacionService
         }
 
         var todasValidas = firmas.Count > 0 && firmas.All(f => f.IntegridadValida && f.CertificadoVigenteAlFirmar);
+        Bitacora.Registrar(firmas.Count == 0 || todasValidas ? NivelBitacora.Info : NivelBitacora.Aviso, "Verificación de firmas",
+            firmas.Count == 0
+                ? $"El PDF ({Bitacora.Tamano(pdf.Length)}) no contiene firmas."
+                : $"{firmas.Count} firma(s): " + string.Join("; ", firmas.Select(f =>
+                    $"{f.Firmante} — {(f.IntegridadValida ? "íntegra" : "ALTERADA")}, " +
+                    $"{(f.CertificadoVigenteAlFirmar ? "certificado vigente" : "certificado NO vigente")}" +
+                    $"{(f.TieneSelloTiempo ? ", con sello de tiempo" : "")}{(f.Error != null ? $", error: {f.Error}" : "")}")));
         return new VerificarResponse(firmas.Count, todasValidas, firmas);
     }
 

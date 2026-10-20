@@ -31,9 +31,21 @@ Forma parte del sistema de firma digital:
 dotnet run
 ```
 
-Es una aplicación de Windows sin consola: aparece como ícono en la bandeja del sistema (menú:
-abrir el sitio de firma, ver registro, salir). Solo se permite una instancia por usuario. El registro
-se guarda en `%LOCALAPPDATA%\AgenteFirma\logs` (14 días).
+Es una aplicación de Windows sin consola que vive en la bandeja del sistema:
+
+- **Ícono verde** = el agente responde; **amarillo** = no responde (se autodiagnostica cada 10 s
+  consultándose a sí mismo como lo haría el sitio web; avisa con una notificación si deja de responder).
+- **Clic izquierdo → panel**: estado del componente de firma, abrir el sitio de firma, *Ver bitácora*,
+  *Buscar actualizaciones* (lee `<SitioWeb>/descargas/agente-version.json`), *Reiniciar* y *Cerrar*.
+- **Bitácora**: cada evento con hora, operación y detalle — peticiones recibidas (sitio de origen,
+  ruta, resultado y tiempo), orígenes rechazados y por qué, pasos de cada firma (certificado, archivo,
+  motivo, sello, TSA, CRL/OCSP, reparación de PDF, reintentos), verificaciones, errores con su causa
+  técnica, reinicios y autodiagnóstico. Tiene buscador, copiar/guardar, *Sistema → Diagnóstico de
+  conexión* y *Ayuda → ¿La web dice que no conecta?*. Si la web no conecta y en la bitácora no aparece
+  ninguna petición desde el sitio, el navegador la está bloqueando antes de llegar al agente.
+- Una sola instancia por usuario; si la anterior quedó colgada se reemplaza sola (también con
+  *Reiniciar* o el acceso «Reiniciar Agente de Firma» del menú Inicio).
+- Registro diario en `%LOCALAPPDATA%\AgenteFirma\logs` (14 días).
 
 ## Instalador para las PCs de los usuarios
 

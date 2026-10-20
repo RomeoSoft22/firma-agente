@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using AgenteFirma.Servicios;
 
 namespace AgenteFirma;
 
@@ -17,7 +18,11 @@ public static class Instancia
     /// </summary>
     public static Mutex? Tomar(bool reiniciar, int puerto, string? origen)
     {
-        if (reiniciar) TerminarOtras();
+        if (reiniciar)
+        {
+            Bitacora.Info("Reinicio", "Se solicitó reiniciar el agente: se terminan las instancias anteriores.");
+            TerminarOtras();
+        }
 
         var mutex = new Mutex(false, NombreMutex);
         if (Adquirir(mutex, TimeSpan.Zero)) return mutex;
@@ -29,6 +34,7 @@ public static class Instancia
         }
 
         // La instancia anterior está colgada: se termina y se toma su lugar.
+        Bitacora.Aviso("Autorreparación", "Había otra instancia del agente que no respondía; se termina y se inicia una nueva.");
         TerminarOtras();
         if (Adquirir(mutex, TimeSpan.FromSeconds(10))) return mutex;
         mutex.Dispose();
@@ -56,8 +62,10 @@ public static class Instancia
         {
             try
             {
+                var ruta = p.MainModule?.FileName ?? "?";
                 p.Kill(entireProcessTree: true);
                 p.WaitForExit(5000);
+                Bitacora.Info("Reinicio", $"Se terminó la instancia anterior PID {p.Id} ({ruta}).");
             }
             catch { /* de otro usuario o ya terminado */ }
             finally { p.Dispose(); }
@@ -71,6 +79,7 @@ public static class Instancia
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
             using var pedido = new HttpRequestMessage(HttpMethod.Get, $"http://127.0.0.1:{puerto}/api/estado");
             if (!string.IsNullOrEmpty(origen)) pedido.Headers.Add("Origin", origen);
+            pedido.Headers.Add(Bandeja.EncabezadoAutodiagnostico, "1");
             using var respuesta = http.Send(pedido);
             return respuesta.IsSuccessStatusCode;
         }

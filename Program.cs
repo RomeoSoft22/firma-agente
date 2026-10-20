@@ -46,6 +46,36 @@ builder.Services.AddSingleton<PdfVerificacionService>();
 
 var app = builder.Build();
 
+// Bitácora de cada petición: desde qué sitio llega, qué pide, cómo terminó y cuánto tardó.
+// (Las consultas de autodiagnóstico del propio ícono de la bandeja no se registran.)
+app.Use(async (ctx, next) =>
+{
+    if (ctx.Request.Headers.ContainsKey(Bandeja.EncabezadoAutodiagnostico))
+    {
+        await next();
+        return;
+    }
+    var reloj = System.Diagnostics.Stopwatch.StartNew();
+    await next();
+    reloj.Stop();
+
+    var origen = ctx.Request.Headers.Origin.ToString();
+    var desde = string.IsNullOrEmpty(origen) ? "sin encabezado Origin" : origen;
+    var operacion = DescribirRuta(ctx.Request.Method, ctx.Request.Path);
+    var codigo = ctx.Response.StatusCode;
+    var detalle = $"{ctx.Request.Method} {ctx.Request.Path}{ctx.Request.QueryString} desde {desde} → HTTP {codigo} en {reloj.ElapsedMilliseconds} ms";
+    if (ctx.Request.ContentLength is > 0) detalle += $" · cuerpo {Bitacora.Tamano(ctx.Request.ContentLength.Value)}";
+    if (HttpMethods.IsOptions(ctx.Request.Method))
+    {
+        var pna = ctx.Request.Headers.ContainsKey("Access-Control-Request-Private-Network") ? " (con permiso de red privada)" : "";
+        Bitacora.Info("Verificación previa del navegador", $"El navegador consultó si puede llamar al agente{pna}. {detalle}");
+        return;
+    }
+    if (codigo < 400) Bitacora.Exito(operacion, detalle);
+    else if (codigo < 500) Bitacora.Aviso(operacion, detalle);
+    else Bitacora.Error(operacion, detalle);
+});
+
 // Cabeceras de seguridad + Private Network Access (Chrome lo exige para que una web llame a 127.0.0.1).
 app.Use(async (ctx, next) =>
 {
@@ -68,6 +98,11 @@ app.Use(async (ctx, next) =>
         var origen = ctx.Request.Headers.Origin.ToString();
         if (string.IsNullOrEmpty(origen) || !origenes.Contains(origen, StringComparer.OrdinalIgnoreCase))
         {
+            Bitacora.Aviso("Origen no autorizado", string.IsNullOrEmpty(origen)
+                ? $"Se rechazó {ctx.Request.Method} {ctx.Request.Path}: llegó sin encabezado Origin (se abrió la dirección " +
+                  "directamente en el navegador o la llamó otro programa). Es normal si usted abrió http://127.0.0.1:9876."
+                : $"Se rechazó {ctx.Request.Method} {ctx.Request.Path} desde '{origen}': ese sitio no está en " +
+                  $"Agente:OrigenesPermitidos ({string.Join(", ", origenes)}). Agréguelo en appsettings.json si es un sitio propio.");
             ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
             await ctx.Response.WriteAsJsonAsync(new ErrorDto("Origen no autorizado."));
             return;
@@ -100,6 +135,9 @@ app.Use(async (ctx, next) =>
             _ => (StatusCodes.Status500InternalServerError, "Ocurrió un error inesperado al procesar la solicitud.")
         };
         app.Logger.LogError(ex, "Error procesando {Ruta}", ctx.Request.Path);
+        var interno = ex.InnerException != null ? $" | Causa: {ex.InnerException.GetType().Name}: {ex.InnerException.Message}" : "";
+        Bitacora.Error("Error en " + DescribirRuta(ctx.Request.Method, ctx.Request.Path),
+            $"Mensaje mostrado al usuario: «{mensaje}». Detalle técnico: {ex.GetType().Name}: {ex.Message}{interno}");
         ctx.Response.StatusCode = estado;
         await ctx.Response.WriteAsJsonAsync(new ErrorDto(mensaje));
     }
@@ -151,23 +189,51 @@ try
 catch (IOException ex)
 {
     app.Logger.LogError(ex, "No se pudo abrir el puerto {Puerto}", puerto);
+    Bitacora.Error("Inicio del agente", $"No se pudo abrir el puerto {puerto}: {ex.Message}. Otro programa lo está usando.");
     MessageBox.Show(
         $"El Agente de Firma no pudo iniciarse: el puerto {puerto} está siendo usado por otro programa.",
         "Agente de Firma Digital", MessageBoxButtons.OK, MessageBoxIcon.Error);
     return;
 }
 
-app.Logger.LogInformation("Agente de firma v{Version} escuchando en http://127.0.0.1:{Puerto} — orígenes permitidos: {Origenes}",
-    version, puerto, string.Join(", ", origenes));
+Bitacora.Exito("Inicio del agente",
+    $"Agente de Firma v{version} escuchando en http://127.0.0.1:{puerto}{(reiniciar ? " (reiniciado)" : "")}. " +
+    $"Equipo {Environment.MachineName}, usuario {Environment.UserName}, Windows {Environment.OSVersion.Version}.");
+Bitacora.Info("Configuración", $"Sitios autorizados: {string.Join(", ", origenes)}. Sitio de firma: {sitioWeb ?? "(no definido)"}. " +
+    $"Tamaño máximo de PDF: {maxBytes / 1024 / 1024} MB. Ejecutable: {Environment.ProcessPath}. Registro: {RegistroArchivoProvider.Carpeta}.");
+try
+{
+    var certs = app.Services.GetRequiredService<CertificadoService>().Listar(false);
+    Bitacora.Info("Certificados de firma",
+        certs.Count == 0
+            ? "No se encontró ningún certificado de firma en el almacén personal de Windows. Conecte el token o DNIe."
+            : $"{certs.Count} disponible(s): " + string.Join("; ", certs.Select(c => $"{c.Titular} (vence {c.ValidoHasta:dd/MM/yyyy}, emisor {c.Emisor})")));
+}
+catch (Exception ex)
+{
+    Bitacora.Aviso("Certificados de firma", $"No se pudo leer el almacén de certificados: {ex.Message}");
+}
 
 // Ícono en la bandeja del sistema (Windows Forms requiere un hilo STA propio).
 var hiloBandeja = new Thread(() =>
 {
     Application.EnableVisualStyles();
-    Application.Run(new Bandeja(puerto, sitioWeb, () => app.Lifetime.StopApplication()));
+    Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+    Application.Run(new Bandeja(puerto, sitioWeb, origenes.FirstOrDefault(), version, () => app.Lifetime.StopApplication()));
 });
 hiloBandeja.SetApartmentState(ApartmentState.STA);
 hiloBandeja.IsBackground = true;
 hiloBandeja.Start();
 
 await app.WaitForShutdownAsync();
+Bitacora.Info("Cierre del agente", "El agente se detuvo.");
+
+static string DescribirRuta(string metodo, PathString ruta) => ruta.Value?.ToLowerInvariant() switch
+{
+    "/api/estado" => "Consulta de estado",
+    "/api/certificados" => "Lectura de certificados",
+    "/api/firmar" => "Firma de documento",
+    "/api/firmar-carpeta" => "Firma de carpeta",
+    "/api/verificar" => "Verificación de firmas",
+    _ => $"Petición {metodo} {ruta}"
+};

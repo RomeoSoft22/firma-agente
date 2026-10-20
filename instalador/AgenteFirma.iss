@@ -4,7 +4,7 @@
 ; desde "Aplicaciones instaladas" de Windows.
 
 #define Nombre "Agente de Firma Digital"
-#define Version "1.2.0"
+#define Version "1.3.0"
 #define Ejecutable "AgenteFirma.exe"
 #ifndef Publicacion
   #define Publicacion "..\publish"

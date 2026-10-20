@@ -33,9 +33,22 @@ public class PdfFirmaService
     {
         var cert = _certificados.Obtener(req.Thumbprint);
         var entrada = Convert.FromBase64String(req.PdfBase64);
+        var op = req.Opciones;
+        Bitacora.Info("Firma de documento",
+            $"Se va a firmar '{req.NombreArchivo}' ({Bitacora.Tamano(entrada.Length)}) con el certificado de " +
+            $"{CertificadoService.Titular(cert)} (emisor {CertificadoService.Emisor(cert)}, vence {cert.NotAfter:dd/MM/yyyy}). " +
+            $"Motivo: «{op.Motivo}». " + (op.Visible
+                ? $"Sello visible en página {(op.Pagina <= 0 ? "última" : op.Pagina.ToString())}, {op.Ancho:0}×{op.Alto:0} pt, " +
+                  $"diseño {op.Disposicion}{(string.IsNullOrEmpty(op.ImagenBase64) ? ", sin imagen" : ", con imagen")}."
+                : "Firma invisible.") +
+            $" Sello de tiempo: {(op.UsarSelloTiempo ? op.TsaUrl : "no")}. OCSP/CRL: {(op.IncluirRevocacion ? "sí" : "no")}.");
+        var reloj = System.Diagnostics.Stopwatch.StartNew();
         var (salida, fecha) = FirmarBytes(entrada, cert, req.Opciones);
 
         var nombre = NombreFirmado(req.NombreArchivo ?? "documento.pdf", "[FIRMADO]");
+        Bitacora.Exito("Firma de documento",
+            $"Firma completa: '{nombre}' ({Bitacora.Tamano(salida.Length)}) en {reloj.ElapsedMilliseconds} ms. " +
+            $"SHA-256 {Convert.ToHexString(SHA256.HashData(salida))[..16].ToLowerInvariant()}…");
         return new FirmarResponse(
             PdfBase64: Convert.ToBase64String(salida),
             NombreArchivo: nombre,
@@ -66,6 +79,9 @@ public class PdfFirmaService
             .Where(f => !System.IO.Path.GetFullPath(f).StartsWith(destinoCompleto, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
+        Bitacora.Info("Firma de carpeta",
+            $"Se van a firmar {archivos.Count} PDF de '{req.CarpetaOrigen}'{(req.Recursivo ? " (con subcarpetas)" : "")} " +
+            $"hacia '{destino}' con el certificado de {CertificadoService.Titular(cert)}.");
         var resultados = new List<ResultadoArchivo>();
         foreach (var archivo in archivos)
         {
@@ -80,15 +96,19 @@ public class PdfFirmaService
                 var (salida, _) = FirmarBytes(File.ReadAllBytes(archivo), cert, req.Opciones);
                 File.WriteAllBytes(salidaRuta, salida);
                 resultados.Add(new ResultadoArchivo(archivo, salidaRuta, true, null));
+                Bitacora.Exito("Firma de carpeta", $"Firmado {archivo} → {salidaRuta}");
             }
             catch (Exception ex)
             {
                 _log.LogWarning(ex, "Error firmando {Archivo}", archivo);
+                Bitacora.Error("Firma de carpeta", $"No se pudo firmar {archivo}: {ex.GetType().Name}: {ex.Message}");
                 resultados.Add(new ResultadoArchivo(archivo, null, false, ex.Message));
             }
         }
 
         var ok = resultados.Count(r => r.Ok);
+        Bitacora.Registrar(ok == resultados.Count ? NivelBitacora.Exito : NivelBitacora.Aviso, "Firma de carpeta",
+            $"Terminado: {ok} de {resultados.Count} firmados, {resultados.Count - ok} con error.");
         return new FirmarCarpetaResponse(resultados.Count, ok, resultados.Count - ok, resultados);
     }
 
@@ -115,7 +135,10 @@ public class PdfFirmaService
             var listas = DescargarCrls(cadena);
             bytesCrl = listas.Sum(l => l.Length);
             crls = listas.Select(l => (ICrlClient)new CrlClientOffline(l)).ToList();
+            Bitacora.Info("Estado de revocación", $"Se descargaron {listas.Count} lista(s) CRL ({Bitacora.Tamano(bytesCrl)}); se consultará OCSP al firmar.");
         }
+        Bitacora.Info("Cadena de certificación",
+            string.Join(" → ", cadenaNet.Select(c => CertificadoService.Titular(c))) + $" ({cadenaNet.Length} certificado(s)).");
 
         // Espacio reservado en el PDF para la firma (contenedor CMS). El valor por defecto de iText (8 KB)
         // no alcanza con cadenas de certificados reales + sello de tiempo + OCSP/CRL.
@@ -133,11 +156,13 @@ public class PdfFirmaService
             catch (iText.Kernel.Exceptions.PdfException ex) when (ex.Message.Contains("Append mode requires") && intento < 3)
             {
                 // PDF con errores de estructura (xref dañada, etc.): se reescribe limpio y se reintenta.
+                Bitacora.Aviso("Reparación de PDF", $"El PDF tiene errores de estructura ({ex.Message}); se reescribe antes de firmar.");
                 pdf = Reparar(pdf);
             }
             catch (IOException ex) when (ex.Message.Contains("Not enough space") && intento < 3)
             {
                 _log.LogWarning("Espacio de firma insuficiente ({Bytes} bytes); se reintenta con el doble.", espacio);
+                Bitacora.Aviso("Espacio de firma", $"El espacio reservado ({Bitacora.Tamano(espacio)}) no alcanzó; se reintenta con el doble.");
                 espacio *= 2;
             }
         }
@@ -181,6 +206,7 @@ public class PdfFirmaService
             catch (Exception ex)
             {
                 _log.LogWarning(ex, "No se pudo descargar la CRL de {Sujeto}", certificado.SubjectDN);
+                Bitacora.Aviso("Estado de revocación", $"No se pudo descargar la CRL de {certificado.SubjectDN}: {ex.Message}");
             }
         }
         return listas.Distinct(new ComparadorBytes()).ToList();
